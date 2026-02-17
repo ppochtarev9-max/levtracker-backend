@@ -33,6 +33,11 @@ db.serialize(() => {
         note TEXT,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
+    db.run(`CREATE TABLE IF NOT EXISTS user_mapping (
+    application_id TEXT PRIMARY KEY,
+    user_token TEXT UNIQUE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
 });
 
 // Настройка Passport для Яндекса
@@ -53,6 +58,19 @@ passport.deserializeUser((id, done) => {
     done(null, { id: id });
 });
 
+function linkUserIds(applicationId, userToken) {
+    db.run(`
+        INSERT OR REPLACE INTO user_mapping (application_id, user_token)
+        VALUES (?, ?)
+    `, [applicationId, userToken], (err) => {
+        if (err) {
+            console.error("Failed to link user IDs:", err);
+        } else {
+            console.log(`Linked application_id: $applicationId) with user_token: $userToken)`);
+        }
+    });
+}
+
 app.get('/', (req, res) => {
     res.send("LevTracker API is running!");
 });
@@ -62,6 +80,14 @@ app.get('/auth/yandex', passport.authenticate('yandex'));
 app.get('/auth/yandex/callback',
     passport.authenticate('yandex', { failureRedirect: '/' }),
     (req, res) => {
+        // req.session.applicationId — если он был передан в сессии от Алисы
+        const applicationId = req.session.applicationId || null;
+
+        if (applicationId) {
+            // Сопоставляем applicationId с userToken
+            linkUserIds(applicationId, req.user.id);
+        }
+
         res.redirect(`levtracker://login-success?token=${req.user.id}`);
     });
 
@@ -103,9 +129,10 @@ function addRecord(userId, type, note) {
 // Обработка запроса от Алисы
 app.post('/alice', (req, res) => {
     try {
-        const userId = req.body.session.user_id || req.body.session.application.application_id;
-        const command = req.body.request.original_utterance.toLowerCase();
+        const applicationId = req.body.session.application.application_id;
+        const userId = req.body.session.user_id || applicationId;
 
+        // Если userId не найден, используем applicationId
         if (!userId) {
             console.error("No user ID found in request");
             return res.status(200).json({
@@ -114,22 +141,30 @@ app.post('/alice', (req, res) => {
             });
         }
 
-        if (command.includes('добавь сон')) {
-            addRecord(userId, 'сон', 'начало сна');
-        }
+        // Если пришёл applicationId, но нет user_id — ищем в таблице связей
+        if (!req.body.session.user_id && applicationId) {
+            db.get(
+                `SELECT user_token FROM user_mapping WHERE application_id = ?`,
+                [applicationId],
+                (err, row) => {
+                    if (err) {
+                        console.error("Database error in Alice handler:", err);
+                        return res.status(200).json({
+                            response: { text: "Ошибка базы данных." },
+                            version: req.body.version || '1.0'
+                        });
+                    }
 
-        if (command.includes('добавь бодрствование')) {
-            addRecord(userId, 'бодрствование', 'начало бодрствования');
-        }
+                    const actualUserId = row ? row.user_token : applicationId;
 
-        if (command.includes('добавь кормление')) {
-            addRecord(userId, 'кормление', 'кормление');
+                    // Добавляем запись под actualUserId
+                    handleAliceRequest(actualUserId, req, res);
+                }
+            );
+        } else {
+            // Если user_id уже есть, используем его напрямую
+            handleAliceRequest(userId, req, res);
         }
-
-        res.json({
-            response: { text: 'Запись добавлена!' },
-            version: req.body.version || '1.0'
-        });
     } catch (error) {
         console.error("Error in /alice handler:", error);
         res.status(200).json({
@@ -139,6 +174,27 @@ app.post('/alice', (req, res) => {
     }
 });
 
+// Вынесем логику обработки в отдельную функцию
+function handleAliceRequest(userId, req, res) {
+    const command = req.body.request.original_utterance.toLowerCase();
+
+    if (command.includes('добавь сон')) {
+        addRecord(userId, 'сон', 'начало сна');
+    }
+
+    if (command.includes('добавь бодрствование')) {
+        addRecord(userId, 'бодрствование', 'начало бодрствования');
+    }
+
+    if (command.includes('добавь кормление')) {
+        addRecord(userId, 'кормление', 'кормление');
+    }
+
+    res.json({
+        response: { text: 'Запись добавлена!' },
+        version: req.body.version || '1.0'
+    });
+}
 // Получение записей пользователя
 app.get('/api/records/:userId', (req, res) => {
     const userId = req.params.userId;
@@ -251,4 +307,5 @@ app.post('/api/add-record', (req, res) => {
     }
 });
 
-app.listen(3000, () => console.log('Server running on http://localhost:3000'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
