@@ -13,7 +13,7 @@ app.use(bodyParser.json());
 
 // Сессия
 app.use(session({
-    secret: process.env.SESSION_SECRET,
+    secret: process.env.SESSION_SECRET || 'default-secret',
     resave: false,
     saveUninitialized: false,
     cookie: { secure: false }
@@ -33,11 +33,12 @@ db.serialize(() => {
         note TEXT,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
+
     db.run(`CREATE TABLE IF NOT EXISTS user_mapping (
-    application_id TEXT PRIMARY KEY,
-    user_token TEXT UNIQUE,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)`);
+        application_id TEXT PRIMARY KEY,
+        user_token TEXT UNIQUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
 });
 
 // Настройка Passport для Яндекса
@@ -57,19 +58,6 @@ passport.serializeUser((user, done) => {
 passport.deserializeUser((id, done) => {
     done(null, { id: id });
 });
-
-function linkUserIds(applicationId, userToken) {
-    db.run(`
-        INSERT OR REPLACE INTO user_mapping (application_id, user_token)
-        VALUES (?, ?)
-    `, [applicationId, userToken], (err) => {
-        if (err) {
-            console.error("Failed to link user IDs:", err);
-        } else {
-            console.log(`Linked application_id: $applicationId) with user_token: $userToken)`);
-        }
-    });
-}
 
 app.get('/', (req, res) => {
     res.send("LevTracker API is running!");
@@ -126,13 +114,26 @@ function addRecord(userId, type, note) {
     }
 }
 
+// Функция сопоставления пользователей
+function linkUserIds(applicationId, userToken) {
+    db.run(`
+        INSERT OR REPLACE INTO user_mapping (application_id, user_token)
+        VALUES (?, ?)
+    `, [applicationId, userToken], (err) => {
+        if (err) {
+            console.error("Failed to link user IDs:", err);
+        } else {
+            console.log(`Linked application_id: ${applicationId} with user_token: ${userToken}`);
+        }
+    });
+}
+
 // Обработка запроса от Алисы
 app.post('/alice', (req, res) => {
     try {
         const applicationId = req.body.session.application.application_id;
         const userId = req.body.session.user_id || applicationId;
 
-        // Если userId не найден, используем applicationId
         if (!userId) {
             console.error("No user ID found in request");
             return res.status(200).json({
@@ -174,7 +175,7 @@ app.post('/alice', (req, res) => {
     }
 });
 
-// Вынесем логику обработки в отдельную функцию
+// Вынесенная логика обработки запроса от Алисы
 function handleAliceRequest(userId, req, res) {
     const command = req.body.request.original_utterance.toLowerCase();
 
@@ -195,6 +196,7 @@ function handleAliceRequest(userId, req, res) {
         version: req.body.version || '1.0'
     });
 }
+
 // Получение записей пользователя
 app.get('/api/records/:userId', (req, res) => {
     const userId = req.params.userId;
