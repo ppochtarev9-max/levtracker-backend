@@ -1,28 +1,38 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const app = express();
+const http = require('http');
+const url = require('url');
 
-app.use(bodyParser.json());
+const server = http.createServer((req, res) => {
+    console.log(`Incoming request: ${req.method} ${req.url}`);
 
-app.get('/', (req, res) => {
-    console.log("GET / called");
-    res.send("Minimal server is running!");
-});
+    if (req.method === 'POST' && req.url === '/alice') {
+        let body = '';
+        req.on('data', chunk => {
+            body += chunk.toString();
+        });
+        req.on('end', () => {
+            console.log('Request body:', body);
 
-app.post('/alice', (req, res) => {
-    console.log("POST /alice called");
-    console.log("Request body:", JSON.stringify(req.body, null, 2));
-    res.json({
-        response: { text: 'Minimal server response!' },
-        version: req.body.version || '1.0'
-    });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                response: { text: 'Minimal server response!' },
+                version: JSON.parse(body).version || '1.0'
+            }));
+        });
+    } else if (req.method === 'GET' && req.url === '/') {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('Minimal server is running!');
+    } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not Found');
+    }
 });
 
 const PORT = process.env.PORT || 3000;
-const server = app.listen(PORT, () => console.log(`Minimal server running on port ${PORT}`));
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Minimal server running on port ${PORT}`);
+});
 
-// Добавим обработчики ошибок
 server.on('error', (err) => {
     console.error('Server error:', err);
+    process.exit(1);
 });
-// test
