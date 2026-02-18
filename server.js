@@ -48,6 +48,7 @@ passport.use(new YandexStrategy({
     callbackURL: "/auth/yandex/callback"
 }, (accessToken, refreshToken, profile, done) => {
     return done(null, profile);
+    // для коммита
 }));
 
 // Сериализация и десериализация
