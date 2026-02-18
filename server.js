@@ -80,7 +80,9 @@ app.get('/auth/yandex/callback',
     });
 
 // Функция добавления записи
-function addRecord(userId, type, note) {
+ffunction addRecord(userId, type, note) {
+    console.log("addRecord called with userId:", userId, "type:", type, "note:", note);
+
     const currentTime = new Date().toISOString();
 
     if (type === 'сон' || type === 'бодрствование') {
@@ -89,31 +91,50 @@ function addRecord(userId, type, note) {
             ORDER BY timestamp DESC LIMIT 1
         `, [userId, type], (err, row) => {
             if (err) {
-                console.error("Database error in addRecord:", err);
+                console.error("Database error in addRecord SELECT:", err);
                 return;
             }
 
+            console.log("Found previous record:", row);
+
             if (row && !row.note.includes('окончание')) {
                 const endNote = row.type === 'сон' ? 'окончание сна' : 'окончание бодрствования';
+                console.log("Inserting end record:", userId, row.type, endNote, currentTime);
+
                 db.run(`INSERT INTO records (user_id, type, note, timestamp) VALUES (?, ?, ?, ?)`,
                     [userId, row.type, endNote, currentTime], (err) => {
-                        if (err) console.error("Failed to insert end record:", err);
+                        if (err) {
+                            console.error("Failed to insert end record:", err);
+                        } else {
+                            console.log("End record inserted successfully");
+                        }
                     });
             }
 
+            console.log("Inserting new record:", userId, type, note, currentTime);
+
             db.run(`INSERT INTO records (user_id, type, note, timestamp) VALUES (?, ?, ?, ?)`,
                 [userId, type, note, currentTime], (err) => {
-                    if (err) console.error("Failed to insert new record:", err);
+                    if (err) {
+                        console.error("Failed to insert new record:", err);
+                    } else {
+                        console.log("New record inserted successfully");
+                    }
                 });
         });
     } else {
+        console.log("Inserting feeding record:", userId, type, note, currentTime);
+
         db.run(`INSERT INTO records (user_id, type, note, timestamp) VALUES (?, ?, ?, ?)`,
             [userId, type, note, currentTime], (err) => {
-                if (err) console.error("Failed to insert feeding record:", err);
+                if (err) {
+                    console.error("Failed to insert feeding record:", err);
+                } else {
+                    console.log("Feeding record inserted successfully");
+                }
             });
     }
 }
-
 // Функция сопоставления пользователей
 function linkUserIds(applicationId, userToken) {
     db.run(`
