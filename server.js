@@ -33,12 +33,6 @@ db.serialize(() => {
         note TEXT,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
-
-    db.run(`CREATE TABLE IF NOT EXISTS user_mapping (
-        application_id TEXT PRIMARY KEY,
-        user_token TEXT UNIQUE,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
 });
 
 // Настройка Passport для Яндекса
@@ -68,14 +62,6 @@ app.get('/auth/yandex', passport.authenticate('yandex'));
 app.get('/auth/yandex/callback',
     passport.authenticate('yandex', { failureRedirect: '/' }),
     (req, res) => {
-        // req.session.applicationId — если он был передан в сессии от Алисы
-        const applicationId = req.session.applicationId || null;
-
-        if (applicationId) {
-            // Сопоставляем applicationId с userToken
-            linkUserIds(applicationId, req.user.id);
-        }
-
         res.redirect(`levtracker://login-success?token=${req.user.id}`);
     });
 
@@ -114,25 +100,11 @@ function addRecord(userId, type, note) {
     }
 }
 
-// Функция сопоставления пользователей
-function linkUserIds(applicationId, userToken) {
-    db.run(`
-        INSERT OR REPLACE INTO user_mapping (application_id, user_token)
-        VALUES (?, ?)
-    `, [applicationId, userToken], (err) => {
-        if (err) {
-            console.error("Failed to link user IDs:", err);
-        } else {
-            console.log(`Linked application_id: ${applicationId} with user_token: ${userToken}`);
-        }
-    });
-}
-
-// Обработка запроса от Алисы
+// Обработка запроса от Алисы (до маппинга)
 app.post('/alice', (req, res) => {
     try {
-        const applicationId = req.body.session.application.application_id;
-        const userId = req.body.session.user_id || applicationId;
+        const userId = req.body.session.user_id || req.body.session.application.application_id;
+        const command = req.body.request.original_utterance.toLowerCase();
 
         if (!userId) {
             console.error("No user ID found in request");
@@ -142,30 +114,22 @@ app.post('/alice', (req, res) => {
             });
         }
 
-        // Если пришёл applicationId, но нет user_id — ищем в таблице связей
-        if (!req.body.session.user_id && applicationId) {
-            db.get(
-                `SELECT user_token FROM user_mapping WHERE application_id = ?`,
-                [applicationId],
-                (err, row) => {
-                    if (err) {
-                        console.error("Database error in Alice handler:", err);
-                        return res.status(200).json({
-                            response: { text: "Ошибка базы данных." },
-                            version: req.body.version || '1.0'
-                        });
-                    }
-
-                    const actualUserId = row ? row.user_token : applicationId;
-
-                    // Добавляем запись под actualUserId
-                    handleAliceRequest(actualUserId, req, res);
-                }
-            );
-        } else {
-            // Если user_id уже есть, используем его напрямую
-            handleAliceRequest(userId, req, res);
+        if (command.includes('добавь сон')) {
+            addRecord(userId, 'сон', 'начало сна');
         }
+
+        if (command.includes('добавь бодрствование')) {
+            addRecord(userId, 'бодрствование', 'начало бодрствования');
+        }
+
+        if (command.includes('добавь кормление')) {
+            addRecord(userId, 'кормление', 'кормление');
+        }
+
+        res.json({
+            response: { text: 'Запись добавлена!' },
+            version: req.body.version || '1.0'
+        });
     } catch (error) {
         console.error("Error in /alice handler:", error);
         res.status(200).json({
@@ -174,28 +138,6 @@ app.post('/alice', (req, res) => {
         });
     }
 });
-
-// Вынесенная логика обработки запроса от Алисы
-function handleAliceRequest(userId, req, res) {
-    const command = req.body.request.original_utterance.toLowerCase();
-
-    if (command.includes('добавь сон')) {
-        addRecord(userId, 'сон', 'начало сна');
-    }
-
-    if (command.includes('добавь бодрствование')) {
-        addRecord(userId, 'бодрствование', 'начало бодрствования');
-    }
-
-    if (command.includes('добавь кормление')) {
-        addRecord(userId, 'кормление', 'кормление');
-    }
-
-    res.json({
-        response: { text: 'Запись добавлена!' },
-        version: req.body.version || '1.0'
-    });
-}
 
 // Получение записей пользователя
 app.get('/api/records/:userId', (req, res) => {
