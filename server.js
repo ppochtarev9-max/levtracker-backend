@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const session = require('express-session');
@@ -21,19 +20,6 @@ app.use(session({
 
 app.use(passport.initialize());
 app.use(passport.session());
-
-// Инициализация БД
-const db = new sqlite3.Database('./tracker.db');
-
-db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS records (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id TEXT,
-        type TEXT,
-        note TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
-});
 
 // Настройка Passport для Яндекса
 passport.use(new YandexStrategy({
@@ -65,42 +51,7 @@ app.get('/auth/yandex/callback',
         res.redirect(`levtracker://login-success?token=${req.user.id}`);
     });
 
-// Функция добавления записи
-function addRecord(userId, type, note) {
-    const currentTime = new Date().toISOString();
-
-    if (type === 'сон' || type === 'бодрствование') {
-        db.get(`
-            SELECT * FROM records WHERE user_id = ? AND type != ? AND note LIKE 'начало%' 
-            ORDER BY timestamp DESC LIMIT 1
-        `, [userId, type], (err, row) => {
-            if (err) {
-                console.error("Database error in addRecord:", err);
-                return;
-            }
-
-            if (row && !row.note.includes('окончание')) {
-                const endNote = row.type === 'сон' ? 'окончание сна' : 'окончание бодрствования';
-                db.run(`INSERT INTO records (user_id, type, note, timestamp) VALUES (?, ?, ?, ?)`,
-                    [userId, row.type, endNote, currentTime], (err) => {
-                        if (err) console.error("Failed to insert end record:", err);
-                    });
-            }
-
-            db.run(`INSERT INTO records (user_id, type, note, timestamp) VALUES (?, ?, ?, ?)`,
-                [userId, type, note, currentTime], (err) => {
-                    if (err) console.error("Failed to insert new record:", err);
-                });
-        });
-    } else {
-        db.run(`INSERT INTO records (user_id, type, note, timestamp) VALUES (?, ?, ?, ?)`,
-            [userId, type, note, currentTime], (err) => {
-                if (err) console.error("Failed to insert feeding record:", err);
-            });
-    }
-}
-
-// Обработка запроса от Алисы
+// Обработка запроса от Алисы (без базы)
 app.post('/alice', (req, res) => {
     console.log("Alice request received:", JSON.stringify(req.body, null, 2));
 
@@ -120,16 +71,17 @@ app.post('/alice', (req, res) => {
 
         const command = req.body.request.original_utterance.toLowerCase();
 
+        // Только логика, без базы
         if (command.includes('добавь сон')) {
-            addRecord(userId, 'сон', 'начало сна');
+            console.log(`Adding sleep record for user: ${userId}`);
         }
 
         if (command.includes('добавь бодрствование')) {
-            addRecord(userId, 'бодрствование', 'начало бодрствования');
+            console.log(`Adding awake record for user: ${userId}`);
         }
 
         if (command.includes('добавь кормление')) {
-            addRecord(userId, 'кормление', 'кормление');
+            console.log(`Adding feeding record for user: ${userId}`);
         }
 
         res.json({
@@ -145,116 +97,14 @@ app.post('/alice', (req, res) => {
     }
 });
 
-// Получение записей пользователя
+// Получение записей (заглушка)
 app.get('/api/records/:userId', (req, res) => {
-    const userId = req.params.userId;
-    db.all(`SELECT * FROM records WHERE user_id = ? ORDER BY timestamp DESC`, [userId], (err, rows) => {
-        if (err) {
-            res.status(500).json({ error: err.message });
-            return;
-        }
-        res.json(rows);
-    });
+    res.json([]);
 });
 
-// Получение записей с фильтром
-app.get('/api/records/:userId/filter', (req, res) => {
-    const userId = req.params.userId;
-    const { type, from, to } = req.query;
-
-    let query = `SELECT * FROM records WHERE user_id = ?`;
-    let params = [userId];
-
-    if (type) {
-        query += ` AND type = ?`;
-        params.push(type);
-    }
-
-    if (from) {
-        query += ` AND timestamp >= ?`;
-        params.push(from);
-    }
-
-    if (to) {
-        query += ` AND timestamp <= ?`;
-        params.push(to);
-    }
-
-    query += ` ORDER BY timestamp DESC`;
-
-    db.all(query, params, (err, rows) => {
-        if (err) {
-            res.status(500).json({ error: err.message });
-            return;
-        }
-        res.json(rows);
-    });
-});
-
-// Отчёт за период
-app.get('/api/report/:userId/:from/:to', (req, res) => {
-    const { userId, from, to } = req.params;
-    db.all(`
-        SELECT type, note, timestamp FROM records 
-        WHERE user_id = ? AND timestamp BETWEEN ? AND ?
-    `, [userId, from, to], (err, rows) => {
-        if (err) {
-            res.status(500).json({ error: err.message });
-            return;
-        }
-        res.json(rows);
-    });
-});
-
-// Ручное добавление записи (для iOS-приложения)
+// Ручное добавление (заглушка)
 app.post('/api/add-record', (req, res) => {
-    const { userId, type, note } = req.body;
-
-    if (!userId || !type) {
-        return res.status(400).json({ error: "Missing userId or type" });
-    }
-
-    const currentTime = new Date().toISOString();
-
-    if (type === 'сон' || type === 'бодрствование') {
-        db.get(`
-            SELECT * FROM records WHERE user_id = ? AND type != ? AND note LIKE 'начало%' 
-            ORDER BY timestamp DESC LIMIT 1
-        `, [userId, type], (err, row) => {
-            if (err) {
-                console.error("Database error in manual addRecord:", err);
-                return res.status(500).json({ error: err.message });
-            }
-
-            if (row && !row.note.includes('окончание')) {
-                const endNote = row.type === 'сон' ? 'окончание сна' : 'окончание бодрствования';
-                db.run(`INSERT INTO records (user_id, type, note, timestamp) VALUES (?, ?, ?, ?)`,
-                    [userId, row.type, endNote, currentTime], (err) => {
-                        if (err) console.error("Failed to insert end record:", err);
-                    });
-            }
-
-            db.run(`INSERT INTO records (user_id, type, note, timestamp) VALUES (?, ?, ?, ?)`,
-                [userId, type, note, currentTime], function(err) {
-                    if (err) {
-                        console.error("Failed to insert new record:", err);
-                        res.status(500).json({ error: err.message });
-                    } else {
-                        res.status(200).json({ message: "Record added successfully", id: this.lastID });
-                    }
-                });
-        });
-    } else {
-        db.run(`INSERT INTO records (user_id, type, note, timestamp) VALUES (?, ?, ?, ?)`,
-            [userId, type, note, currentTime], function(err) {
-                if (err) {
-                    console.error("Failed to insert feeding record:", err);
-                    res.status(500).json({ error: err.message });
-                } else {
-                    res.status(200).json({ message: "Record added successfully", id: this.lastID });
-                }
-            });
-    }
+    res.status(200).json({ message: "Record added successfully" });
 });
 
 const PORT = process.env.PORT || 3000;
