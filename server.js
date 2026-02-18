@@ -43,13 +43,12 @@ db.serialize(() => {
 
 // Настройка Passport для Яндекса
 passport.use(new YandexStrategy({
-    clientID: process.env.YANDEX_CLIENT_ID, // ← ДОЛЖНО БЫТЬ ТАК
+    clientID: process.env.YANDEX_CLIENT_ID,
     clientSecret: process.env.YANDEX_CLIENT_SECRET,
     callbackURL: "/auth/yandex/callback"
 }, (accessToken, refreshToken, profile, done) => {
     return done(null, profile);
 }));
-//тест
 
 // Сериализация и десериализация
 passport.serializeUser((user, done) => {
@@ -69,7 +68,6 @@ app.get('/auth/yandex', passport.authenticate('yandex'));
 app.get('/auth/yandex/callback',
     passport.authenticate('yandex', { failureRedirect: '/' }),
     (req, res) => {
-        // req.query.state может содержать applicationId, если пришёл из Алисы
         const applicationId = req.query.state || req.session.applicationId || null;
 
         console.log("🔄 Auth callback received:");
@@ -110,11 +108,7 @@ function addRecord(userId, type, note) {
 
                 db.run(`INSERT INTO records (user_id, type, note, timestamp) VALUES (?, ?, ?, ?)`,
                     [userId, row.type, endNote, currentTime], (err) => {
-                        if (err) {
-                            console.error("Failed to insert end record:", err);
-                        } else {
-                            console.log("End record inserted successfully");
-                        }
+                        if (err) console.error("Failed to insert end record:", err);
                     });
             }
 
@@ -122,11 +116,7 @@ function addRecord(userId, type, note) {
 
             db.run(`INSERT INTO records (user_id, type, note, timestamp) VALUES (?, ?, ?, ?)`,
                 [userId, type, note, currentTime], (err) => {
-                    if (err) {
-                        console.error("Failed to insert new record:", err);
-                    } else {
-                        console.log("New record inserted successfully");
-                    }
+                    if (err) console.error("Failed to insert new record:", err);
                 });
         });
     } else {
@@ -134,11 +124,7 @@ function addRecord(userId, type, note) {
 
         db.run(`INSERT INTO records (user_id, type, note, timestamp) VALUES (?, ?, ?, ?)`,
             [userId, type, note, currentTime], (err) => {
-                if (err) {
-                    console.error("Failed to insert feeding record:", err);
-                } else {
-                    console.log("Feeding record inserted successfully");
-                }
+                if (err) console.error("Failed to insert feeding record:", err);
             });
     }
 }
@@ -166,7 +152,6 @@ app.post('/alice', (req, res) => {
         const userIdFromSession = req.body.session.user_id;
 
         if (!userIdFromSession && applicationId) {
-            // Ищем в user_mapping
             db.get(
                 `SELECT user_token FROM user_mapping WHERE application_id = ?`,
                 [applicationId],
@@ -185,7 +170,6 @@ app.post('/alice', (req, res) => {
                 }
             );
         } else {
-            // Используем userId из сессии
             const userId = userIdFromSession || applicationId;
 
             if (!userId) {
@@ -341,29 +325,5 @@ app.post('/api/add-record', (req, res) => {
     }
 });
 
-// ВРЕМЕННО: маршрут для просмотра всех записей (удали после проверки!)
-app.get('/debug/records', (req, res) => {
-    db.all('SELECT * FROM records ORDER BY timestamp DESC', [], (err, rows) => {
-        if (err) {
-            res.status(500).json({ error: err.message });
-            return;
-        }
-        res.json(rows);
-    });
-});
-
-// ВРЕМЕННО: маршрут для просмотра сопоставлений (удали после проверки!)
-app.get('/debug/mapping', (req, res) => {
-    db.all('SELECT * FROM user_mapping', [], (err, rows) => {
-        if (err) {
-            res.status(500).json({ error: err.message });
-            return;
-        }
-        res.json(rows);
-    });
-});
-
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
-
-// тест
