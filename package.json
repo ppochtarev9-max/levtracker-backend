@@ -2,11 +2,13 @@
   "name": "levtracker-backend",
   "version": "1.0.0",
   "description": "",
+//{
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
+    "start": "node server.js"
   },
+//}    
+//"dev": "nodemon server.js"
   "keywords": [],
   "author": "",
   "license": "ISC",

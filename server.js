@@ -43,7 +43,7 @@ db.serialize(() => {
 
 // Настройка Passport для Яндекса
 passport.use(new YandexStrategy({
-    clientID: process.env.YANDEX_CLIENT_ID,
+    clientID: process.env.YANDEX_CLIENT_ID, // ← ДОЛЖНО БЫТЬ ТАК
     clientSecret: process.env.YANDEX_CLIENT_SECRET,
     callbackURL: "/auth/yandex/callback"
 }, (accessToken, refreshToken, profile, done) => {
