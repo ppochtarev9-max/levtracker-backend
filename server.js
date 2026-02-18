@@ -79,6 +79,19 @@ app.get('/auth/yandex/callback',
         res.redirect(`levtracker://login-success?token=${req.user.id}`);
     });
 
+function linkUserIds(applicationId, userToken) {
+    db.run(`
+        INSERT OR REPLACE INTO user_mapping (application_id, user_token)
+        VALUES (?, ?)
+    `, [applicationId, userToken], (err) => {
+        if (err) {
+            console.error("Failed to link user IDs:", err);
+        } else {
+            console.log(`Linked application_id: ${applicationId} with user_token: ${userToken}`);
+        }
+    });
+}
+
 // Функция добавления записи
 function addRecord(userId, type, note) {
     console.log("addRecord called with userId:", userId, "type:", type, "note:", note);
@@ -155,19 +168,10 @@ app.post('/alice', (req, res) => {
 
     try {
         const applicationId = req.body.session?.application?.application_id;
-        const userId = req.body.session.user_id || applicationId;
+        const userIdFromSession = req.body.session.user_id;
 
-        if (!userId) {
-            console.error("No user ID found in request");
-            console.log("Session object:", JSON.stringify(req.body.session, null, 2));
-            return res.status(200).json({
-                response: { text: "Не удалось получить ID пользователя." },
-                version: req.body.version || '1.0'
-            });
-        }
-
-        // Если пришёл applicationId, но нет user_id — ищем в таблице связей
-        if (!req.body.session.user_id && applicationId) {
+        if (!userIdFromSession && applicationId) {
+            // Ищем в user_mapping
             db.get(
                 `SELECT user_token FROM user_mapping WHERE application_id = ?`,
                 [applicationId],
@@ -180,14 +184,23 @@ app.post('/alice', (req, res) => {
                         });
                     }
 
-                    const actualUserId = row ? row.user_token : applicationId;
+                    const userId = row ? row.user_token : applicationId;
 
-                    // Добавляем запись под actualUserId
-                    handleAliceRequest(actualUserId, req, res);
+                    handleAliceRequest(userId, req, res);
                 }
             );
         } else {
-            // Если user_id уже есть, используем его напрямую
+            // Используем userId из сессии
+            const userId = userIdFromSession || applicationId;
+
+            if (!userId) {
+                console.error("No user ID found in request");
+                return res.status(200).json({
+                    response: { text: "Не удалось получить ID пользователя." },
+                    version: req.body.version || '1.0'
+                });
+            }
+
             handleAliceRequest(userId, req, res);
         }
     } catch (error) {
