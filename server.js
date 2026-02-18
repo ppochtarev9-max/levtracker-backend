@@ -80,7 +80,7 @@ app.get('/auth/yandex/callback',
     });
 
 // Функция добавления записи
-ffunction addRecord(userId, type, note) {
+function addRecord(userId, type, note) {
     console.log("addRecord called with userId:", userId, "type:", type, "note:", note);
 
     const currentTime = new Date().toISOString();
