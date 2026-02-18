@@ -19,4 +19,9 @@ app.post('/alice', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => console.log(`Minimal server running on port ${PORT}`));
+const server = app.listen(PORT, () => console.log(`Minimal server running on port ${PORT}`));
+
+// Добавим обработчики ошибок
+server.on('error', (err) => {
+    console.error('Server error:', err);
+});
