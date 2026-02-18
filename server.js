@@ -49,6 +49,7 @@ passport.use(new YandexStrategy({
 }, (accessToken, refreshToken, profile, done) => {
     return done(null, profile);
 }));
+//тест
 
 // Сериализация и десериализация
 passport.serializeUser((user, done) => {
