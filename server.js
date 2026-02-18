@@ -1,7 +1,8 @@
 const express = require('express');
 const app = express();
 
-app.use(express.json());
+const bodyParser = require('body-parser');
+app.use(bodyParser.json());
 
 app.get('/', (req, res) => {
     console.log("GET / called");
