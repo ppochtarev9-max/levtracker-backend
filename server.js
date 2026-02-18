@@ -68,29 +68,22 @@ app.get('/auth/yandex', passport.authenticate('yandex'));
 app.get('/auth/yandex/callback',
     passport.authenticate('yandex', { failureRedirect: '/' }),
     (req, res) => {
-        // req.session.applicationId — если он был передан в сессии от Алисы
-        const applicationId = req.session.applicationId || null;
+        // req.query.state может содержать applicationId, если пришёл из Алисы
+        const applicationId = req.query.state || req.session.applicationId || null;
+
+        console.log("🔄 Auth callback received:");
+        console.log("- applicationId from session/state:", applicationId);
+        console.log("- userToken from req.user.id:", req.user.id);
 
         if (applicationId) {
-            // Сопоставляем applicationId с userToken
+            console.log("🔗 Linking application_id:", applicationId, "with user_token:", req.user.id);
             linkUserIds(applicationId, req.user.id);
+        } else {
+            console.log("⚠️ No applicationId found, skipping user mapping");
         }
 
         res.redirect(`levtracker://login-success?token=${req.user.id}`);
     });
-
-function linkUserIds(applicationId, userToken) {
-    db.run(`
-        INSERT OR REPLACE INTO user_mapping (application_id, user_token)
-        VALUES (?, ?)
-    `, [applicationId, userToken], (err) => {
-        if (err) {
-            console.error("Failed to link user IDs:", err);
-        } else {
-            console.log(`Linked application_id: ${applicationId} with user_token: ${userToken}`);
-        }
-    });
-}
 
 // Функция добавления записи
 function addRecord(userId, type, note) {
@@ -148,6 +141,7 @@ function addRecord(userId, type, note) {
             });
     }
 }
+
 // Функция сопоставления пользователей
 function linkUserIds(applicationId, userToken) {
     db.run(`
@@ -344,6 +338,28 @@ app.post('/api/add-record', (req, res) => {
                 }
             });
     }
+});
+
+// ВРЕМЕННО: маршрут для просмотра всех записей (удали после проверки!)
+app.get('/debug/records', (req, res) => {
+    db.all('SELECT * FROM records ORDER BY timestamp DESC', [], (err, rows) => {
+        if (err) {
+            res.status(500).json({ error: err.message });
+            return;
+        }
+        res.json(rows);
+    });
+});
+
+// ВРЕМЕННО: маршрут для просмотра сопоставлений (удали после проверки!)
+app.get('/debug/mapping', (req, res) => {
+    db.all('SELECT * FROM user_mapping', [], (err, rows) => {
+        if (err) {
+            res.status(500).json({ error: err.message });
+            return;
+        }
+        res.json(rows);
+    });
 });
 
 const PORT = process.env.PORT || 3000;
