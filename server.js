@@ -34,6 +34,15 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log('Listening on all interfaces');
 });
 
+// Ловим сигнал остановки
+process.on('SIGTERM', () => {
+    console.log('Received SIGTERM, shutting down gracefully');
+    server.close(() => {
+        console.log('Server closed');
+        process.exit(0);
+    });
+});
+
 server.on('error', (err) => {
     console.error('Server error:', err);
     process.exit(1);
